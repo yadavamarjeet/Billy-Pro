@@ -14,8 +14,10 @@ export default function DashboardPage() {
   const [timeFilter, setTimeFilter] = useState('month');
 
   useEffect(() => {
-    const savedData = Storage.getData();
-    if (savedData) setData(savedData);
+    (async () => {
+      const savedData = await Storage.getData();
+      if (savedData) setData(savedData);
+    })();
   }, []);
 
   const filteredInvoices = filterInvoicesByDate(data.invoices, timeFilter);

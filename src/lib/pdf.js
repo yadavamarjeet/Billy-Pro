@@ -281,6 +281,7 @@ export const downloadInvoicePDF = async (invoice, data, showToast = null) => {
         <table class="items-table">
             <thead>
                 <tr>
+                    <th>#</th>
                     <th>Item Description</th>
                     <th>Unit Price (₹)</th>
                     <th>Qty</th>
@@ -288,8 +289,9 @@ export const downloadInvoicePDF = async (invoice, data, showToast = null) => {
                 </tr>
             </thead>
             <tbody>
-                ${invoice.items.map(item => `
+                ${invoice.items.map((item, index) => `
                     <tr>
+                        <td>${index + 1}</td>
                         <td>${item.name}</td>
                         <td>₹${item.price.toFixed(2)}</td>
                         <td>${item.quantity}</td>

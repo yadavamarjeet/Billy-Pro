@@ -11,7 +11,9 @@ export const initialData = {
         businessAddress: '123 Business Street, City, State 12345',
         invoicePrefix: 'INV-',
         invoiceStart: 1001,
-        currency: '₹'
+        currency: '₹',
+        canDeleteInvoices: false,
+        privacyMode: false
     }
 };
 
@@ -21,14 +23,16 @@ export function generateId() {
 }
 
 // Calculate invoice totals
-export function calculateInvoiceTotals(items) {
-    const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const total = subtotal;
+export function calculateInvoiceTotals(items, discount = 0, discountType = 'flat') {
+    const subtotal = items.reduce((sum, item) => sum + item.total, 0);
 
-    return {
-        subtotal,
-        total
-    };
+    const discountAmount = discountType === 'percentage'
+        ? (subtotal * discount / 100)
+        : discount;
+
+    const total = Math.max(0, subtotal - discountAmount);
+
+    return { subtotal, discount: discountAmount, total };
 }
 
 // Format currency
@@ -45,9 +49,9 @@ export function formatDate(dateString) {
 export function generateInvoiceNumber(invoices, prefix = 'INV-', start = 1001) {
     prefix = initialData.settings?.invoicePrefix || 'INV-';
     let startNumber = initialData.settings?.invoiceStart || 1000;
-    
+
     let highestNumber = startNumber - 1;
-    
+
     invoices.forEach(invoice => {
         if (invoice.number && invoice.number.startsWith(prefix)) {
             const numStr = invoice.number.replace(prefix, '');
@@ -57,7 +61,7 @@ export function generateInvoiceNumber(invoices, prefix = 'INV-', start = 1001) {
             }
         }
     });
-    
+
     return `${prefix}${highestNumber + 1}`;
 }
 
@@ -77,6 +81,11 @@ export function parseCreatedAt(createdAtStr) {
 
 // Filter invoices by date range
 export function filterInvoicesByDate(invoices, filter) {
+
+    if (invoices == null || invoices.length === 0) {
+        return [];
+    }
+
     const now = new Date();
 
     // Helper function to parse "07-10-2025, 09:50 am" into a Date object

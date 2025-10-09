@@ -15,8 +15,10 @@ export default function Categories() {
     const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
     useEffect(() => {
-        const savedData = Storage.getData();
-        if (savedData) setData(savedData);
+        (async () => {
+            const savedData = await Storage.getData();
+            if (savedData) setData(savedData);
+        })();
     }, []);
 
     const showToast = (message, type = 'success') => {

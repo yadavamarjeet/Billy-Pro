@@ -13,9 +13,10 @@ export class WhatsAppService {
             `• ${item.name} - ${item.quantity} x ₹${item.price.toFixed(2)} = ₹${item.total.toFixed(2)}`
         ).join('\n');
 
-        // Calculate totals
+        // Calculate totals with discount
         const subtotal = invoice.subtotal || invoice.items.reduce((sum, item) => sum + item.total, 0);
-        const total = invoice.total;
+        const discount = invoice.discount || 0;
+        const total = invoice.total || Math.max(0, subtotal - discount);
 
         const businessInfo = {
             businessName: data.settings.businessName,
@@ -25,7 +26,7 @@ export class WhatsAppService {
         };
 
         // Create detailed message with emojis and formatting
-        const message = `Dear ${invoice.customerName},\n\nYour invoice ${invoice.number} from ${businessInfo.businessName} is ready.\n\nInvoice Date: ${invoice.createdAt}\n\nItems Purchased:\n${invoice.items.map(item => `• ${item.name} (${item.quantity} x ₹${item.price.toFixed(2)}) = ₹${item.total.toFixed(2)}`).join('\n')}\n\nAmount Summary:\nSubtotal: ₹${subtotal.toFixed(2)}\nGrand Total: ₹${invoice.total.toFixed(2)}\n\nBusiness Information:\n${businessInfo.businessName}${businessInfo.businessAddress ? `\n${businessInfo.businessAddress}` : ''}${businessInfo.businessPhone ? `\n${businessInfo.businessPhone}` : ''}${businessInfo.businessEmail ? `\n${businessInfo.businessEmail}` : ''}\n\nThank you for your business!\nWe appreciate your trust in us.`;
+        const message = `Dear ${invoice.customerName},\n\nYour invoice ${invoice.number} from ${businessInfo.businessName} is ready.\n\nInvoice Date: ${invoice.createdAt}\n\nItems Purchased:\n${invoice.items.map((item, index) => `${index + 1}. ${item.name} (${item.quantity} x ₹${item.price.toFixed(2)}) = ₹${item.total.toFixed(2)}`).join('\n')}\n\nAmount Summary:\nSubtotal: ₹${subtotal.toFixed(2)}\nDiscount: ₹${discount.toFixed(2)}\nGrand Total: ₹${total.toFixed(2)}\n\nBusiness Information:\n${businessInfo.businessName}${businessInfo.businessAddress ? `\n${businessInfo.businessAddress}` : ''}${businessInfo.businessPhone ? `\n${businessInfo.businessPhone}` : ''}${businessInfo.businessEmail ? `\n${businessInfo.businessEmail}` : ''}\n\nThank you for your business!\nWe appreciate your trust in us.`;
 
         const cleanPhone = invoice.customerPhone.replace(/\D/g, '');
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);

@@ -1,9 +1,21 @@
 'use client';
 
 import { IndianRupee, FileText, Award } from 'lucide-react';
-import { formatCurrency } from '@/lib/data';
+import { formatCurrency, initialData } from '@/lib/data';
+import { Storage } from '@/lib/storage';
+import { useEffect, useState } from 'react';
+
 
 export default function StatsCards({ invoices }) {
+    const [data, setData] = useState(initialData);
+
+    useEffect(() => {
+        (async () => {
+            const savedData = await Storage.getData();
+            if (savedData) setData(savedData);
+        })();
+    }, []);
+
     const totalSales = invoices.reduce((sum, invoice) => sum + invoice.total, 0);
     const totalInvoices = invoices.length;
 
@@ -61,7 +73,7 @@ export default function StatsCards({ invoices }) {
                                 {stat.name}
                             </p>
                             <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
-                                {stat.value}
+                                {data.settings.privacyMode && stat.name === 'Total Sales' ? `${"*".repeat(stat.value.length)}` : stat.value}
                             </p>
                         </div>
                         <div className={`p-3 rounded-full ${colorClasses[stat.color]}`}>

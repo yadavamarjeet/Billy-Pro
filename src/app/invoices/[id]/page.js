@@ -20,6 +20,8 @@ export default function CreateEditInvoice() {
     const params = useParams();
     const isEditMode = params.id !== 'create';
 
+    const [discount, setDiscount] = useState(0);
+    const [discountType, setDiscountType] = useState('flat'); // 'flat' or 'percentage'
     const [data, setData] = useState(initialData);
     const [currentInvoice, setCurrentInvoice] = useState({
         id: '',
@@ -39,28 +41,38 @@ export default function CreateEditInvoice() {
     const [originalItems, setOriginalItems] = useState([]);
 
     useEffect(() => {
-        const savedData = Storage.getData();
-        if (savedData) {
-            setData(savedData);
+        (async () => {
+            const savedData = await Storage.getData();
+            if (savedData) {
+                setData(savedData);
 
-            if (isEditMode) {
-                // Edit mode - load existing invoice
-                const existingInvoice = savedData.invoices.find(inv => inv.id === params.id);
-                if (existingInvoice) {
-                    setCurrentInvoice(existingInvoice);
-                    setOriginalItems([...existingInvoice.items]);
+                if (isEditMode) {
+                    // Edit mode - load existing invoice
+                    const existingInvoice = savedData.invoices.find(inv => inv.id === params.id);
+                    if (existingInvoice) {
+                        setCurrentInvoice(existingInvoice);
+                        setOriginalItems([...existingInvoice.items]);
+
+                        // Load discount data if it exists
+                        if (existingInvoice.discount) {
+                            setDiscount(existingInvoice.discount);
+                            // You might want to store discount type in your invoice data
+                            // or default to flat amount
+                            setDiscountType('flat');
+                        }
+                    } else {
+                        showToast('Invoice not found', 'error');
+                        router.push('/invoices');
+                    }
                 } else {
-                    showToast('Invoice not found', 'error');
-                    router.push('/invoices');
+                    // Create mode - generate new invoice number
+                    setCurrentInvoice(prev => ({
+                        ...prev,
+                        number: generateInvoiceNumber(savedData.invoices, savedData.settings)
+                    }));
                 }
-            } else {
-                // Create mode - generate new invoice number
-                setCurrentInvoice(prev => ({
-                    ...prev,
-                    number: generateInvoiceNumber(savedData.invoices, savedData.settings)
-                }));
             }
-        }
+        })();
     }, [isEditMode, params.id, router]);
 
     const showToast = (message, type = 'success') => {
@@ -68,7 +80,9 @@ export default function CreateEditInvoice() {
         setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
     };
 
-    const { subtotal, total } = calculateInvoiceTotals(currentInvoice.items);
+    const { subtotal, discount: discountAmount, total } = calculateInvoiceTotals(currentInvoice.items,
+        discount,
+        discountType);
 
     // Update stock when items are added/removed
     const updateProductStock = (productName, quantityChange, isRemoving = false) => {
@@ -156,74 +170,82 @@ export default function CreateEditInvoice() {
     };
 
     // Update customer total spent
-    const updateCustomerTotalSpent = (customerName, customerPhone, amount, isEdit = false, oldAmount = 0) => {
-        // If phone number is provided, use it as unique identifier
-        if (customerPhone) {
-            const existingCustomer = data.customers.find(c => c.phone === customerPhone);
+    const updateCustomerData = (customerName, customerPhone, amount, isEdit = false, oldAmount = 0, existingCustomerId = null) => {
+        const updatedCustomers = [...data.customers];
+        let customerId = existingCustomerId;
 
-            if (existingCustomer) {
-                const updatedCustomers = data.customers.map(c =>
-                    c.id === existingCustomer.id
-                        ? {
-                            ...c,
-                            name: customerName || c.name, // Update name if provided
-                            totalSpent: isEdit
-                                ? (c.totalSpent - oldAmount) + amount
-                                : c.totalSpent + amount
-                        }
-                        : c
-                );
-                setData(prev => ({ ...prev, customers: updatedCustomers }));
-                return existingCustomer.id;
-            } else if (customerName) {
-                // Create new customer with phone as unique identifier
-                const customerId = generateId();
-                const newCustomer = {
+        // Case 1: Walk-in customer (no name and no phone)
+        if (!customerName && !customerPhone) {
+            return { customerId: null, updatedCustomers };
+        }
+
+        // Case 2: Only name provided (create/update customer with name only)
+        if (customerName && !customerPhone) {
+            let customer = updatedCustomers.find(c =>
+                c.name === customerName && (!c.phone || c.phone === '')
+            );
+
+            if (customer) {
+                // Update existing customer with same name and no phone
+                customer.totalSpent = isEdit
+                    ? (customer.totalSpent - oldAmount) + amount
+                    : customer.totalSpent + amount;
+                customerId = customer.id;
+            } else {
+                // Create new customer with name only
+                customerId = generateId();
+                updatedCustomers.push({
                     id: customerId,
                     name: customerName,
-                    phone: customerPhone,
+                    phone: '',
+                    email: '',
+                    address: '',
                     totalSpent: amount,
                     createdAt: new Date().toISOString()
-                };
-                setData(prev => ({ ...prev, customers: [...prev.customers, newCustomer] }));
-                return customerId;
+                });
             }
-        } else {
-            // No phone number - treat as walk-in customer with name as identifier
-            if (customerName && customerName !== 'Walk-in Customer') {
-                const existingCustomer = data.customers.find(c =>
-                    c.name === customerName && !c.phone // Only match customers without phone
+        }
+        // Case 3: Phone provided (name is mandatory when phone is provided)
+        else if (customerPhone && customerName) {
+            let customer = updatedCustomers.find(c => c.phone === customerPhone);
+
+            if (customer) {
+                // Update existing customer with same phone
+                customer.name = customerName; // Update name if changed
+                customer.totalSpent = isEdit
+                    ? (customer.totalSpent - oldAmount) + amount
+                    : customer.totalSpent + amount;
+                customerId = customer.id;
+            } else {
+                // Check if customer exists with same name but no phone
+                const customerWithSameName = updatedCustomers.find(c =>
+                    c.name === customerName && (!c.phone || c.phone === '')
                 );
 
-                if (existingCustomer) {
-                    const updatedCustomers = data.customers.map(c =>
-                        c.id === existingCustomer.id
-                            ? {
-                                ...c,
-                                totalSpent: isEdit
-                                    ? (c.totalSpent - oldAmount) + amount
-                                    : c.totalSpent + amount
-                            }
-                            : c
-                    );
-                    setData(prev => ({ ...prev, customers: updatedCustomers }));
-                    return existingCustomer.id;
+                if (customerWithSameName) {
+                    // Update existing customer - add phone to existing customer
+                    customerWithSameName.phone = customerPhone;
+                    customerWithSameName.totalSpent = isEdit
+                        ? (customerWithSameName.totalSpent - oldAmount) + amount
+                        : customerWithSameName.totalSpent + amount;
+                    customerId = customerWithSameName.id;
                 } else {
-                    // Create new walk-in customer
-                    const customerId = generateId();
-                    const newCustomer = {
+                    // Create completely new customer
+                    customerId = generateId();
+                    updatedCustomers.push({
                         id: customerId,
                         name: customerName,
-                        phone: '', // No phone for walk-in
+                        phone: customerPhone,
+                        email: '',
+                        address: '',
                         totalSpent: amount,
                         createdAt: new Date().toISOString()
-                    };
-                    setData(prev => ({ ...prev, customers: [...prev.customers, newCustomer] }));
-                    return customerId;
+                    });
                 }
             }
         }
-        return null;
+
+        return { customerId, updatedCustomers };
     };
 
     // Restore stock from original items when editing
@@ -235,7 +257,8 @@ export default function CreateEditInvoice() {
         });
     };
 
-    const saveInvoice = () => {
+    const saveInvoice = async () => {
+        // Validations
         if (currentInvoice.items.length === 0) {
             showToast('Please add at least one item to the invoice', 'error');
             return;
@@ -262,30 +285,39 @@ export default function CreateEditInvoice() {
             return;
         }
 
-        // Handle customer data and total spent
+        // Validate customer data
         const customerName = currentInvoice.customerName.trim() || 'Walk-in Customer';
-        let customerId = null;
+        const customerPhone = currentInvoice.customerPhone?.trim() || '';
+
+        // If phone is provided, name is mandatory
+        if (customerPhone && !customerName) {
+            showToast('Customer name is required when phone number is provided', 'error');
+            return;
+        }
+
+        // Handle customer data
+        let customerId = currentInvoice.customerId || null;
         let oldTotal = 0;
 
         if (isEditMode) {
-            // In edit mode, find the original invoice to calculate difference
             const originalInvoice = data.invoices.find(inv => inv.id === currentInvoice.id);
             oldTotal = originalInvoice ? originalInvoice.total : 0;
-
-            // Restore stock from original items first
             restoreOriginalStock();
         }
 
-        // Update customer total spent
-        customerId = updateCustomerTotalSpent(
+        // Update or create customer
+        const customerUpdateResult = updateCustomerData(
             customerName,
-            currentInvoice.customerPhone,
+            customerPhone,
             total,
             isEditMode,
-            oldTotal
+            oldTotal,
+            customerId
         );
 
-        // Format current date and time
+        customerId = customerUpdateResult.customerId;
+
+        // Format date and time
         const now = new Date();
         const formattedDateTime = now.toLocaleString('en-IN', {
             timeZone: 'Asia/Kolkata',
@@ -297,32 +329,39 @@ export default function CreateEditInvoice() {
             hour12: true
         }).replace(/\//g, '-');
 
+        // Create invoice object
         const invoiceToSave = {
             ...currentInvoice,
             id: isEditMode ? currentInvoice.id : generateId(),
             customerId,
-            customerName: customerName,
-            customerPhone: currentInvoice.customerPhone,
+            customerName,
+            customerPhone,
             subtotal,
+            discount: discountAmount,
             total,
             createdAt: isEditMode ? currentInvoice.createdAt : formattedDateTime,
             updatedAt: isEditMode ? formattedDateTime : undefined
         };
 
+        // Update invoices
         let updatedInvoices;
         if (isEditMode) {
-            // Update existing invoice
             updatedInvoices = data.invoices.map(inv =>
                 inv.id === currentInvoice.id ? invoiceToSave : inv
             );
         } else {
-            // Add new invoice
             updatedInvoices = [...data.invoices, invoiceToSave];
         }
 
-        const updatedData = { ...data, invoices: updatedInvoices };
+        // SINGLE SAVE - Combine customer updates and invoice updates
+        const updatedData = {
+            ...data,
+            customers: customerUpdateResult.updatedCustomers,
+            invoices: updatedInvoices
+        };
+
         setData(updatedData);
-        Storage.saveData(updatedData);
+        await Storage.saveData(updatedData);
 
         showToast(`Invoice ${isEditMode ? 'updated' : 'saved'} successfully!`);
 
@@ -338,12 +377,14 @@ export default function CreateEditInvoice() {
                 subtotal: 0,
                 total: 0,
             });
+            setDiscount(0);
+            setDiscountType('flat');
         }
 
         router.push('/invoices');
     };
 
-    const shareWhatsApp = () => {
+    const shareWhatsApp = async () => {
         if (!currentInvoice.customerPhone) {
             showToast('Customer phone number is required for WhatsApp sharing', 'error');
             return;
@@ -354,17 +395,22 @@ export default function CreateEditInvoice() {
             return;
         }
 
-        try {
-            const tempInvoice = {
-                ...currentInvoice,
-                customerName: currentInvoice.customerName || 'Customer',
-                number: currentInvoice.number || 'DRAFT',
-                total: total
-            };
 
-            const whatsappUrl = WhatsAppService.shareInvoice(tempInvoice, data);
-            window.open(whatsappUrl, '_blank');
-            showToast('Opening WhatsApp...');
+        try {
+            // Save invoice first
+            await saveInvoice();
+
+            // Get the updated invoice data
+            const savedData = await Storage.getData();
+            const updatedInvoice = savedData.invoices.find(inv =>
+                isEditMode ? inv.id === currentInvoice.id : inv.number === currentInvoice.number
+            );
+
+            if (updatedInvoice) {
+                const whatsappUrl = WhatsAppService.shareInvoice(updatedInvoice, data);
+                window.open(whatsappUrl, '_blank');
+                showToast('Opening WhatsApp...');
+            }
         } catch (error) {
             showToast(error.message, 'error');
         }
@@ -423,7 +469,7 @@ export default function CreateEditInvoice() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                        Customer Name {!isEditMode && '*'}
+                                        Customer Name
                                     </label>
                                     <input
                                         type="text"
@@ -431,13 +477,7 @@ export default function CreateEditInvoice() {
                                         onChange={(e) => setCurrentInvoice(prev => ({ ...prev, customerName: e.target.value }))}
                                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent"
                                         placeholder="Enter customer name"
-                                        disabled={isEditMode}
                                     />
-                                    {isEditMode && (
-                                        <p className="text-xs text-gray-500 mt-1">
-                                            Customer name cannot be changed for existing invoices
-                                        </p>
-                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -474,7 +514,36 @@ export default function CreateEditInvoice() {
                                         onChange={(e) => setCurrentInvoice(prev => ({ ...prev, number: e.target.value }))}
                                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent"
                                         placeholder="e.g., INV-001"
-                                        disabled={isEditMode}
+                                        disabled={isEditMode} // Always disabled in edit mode
+                                    />
+                                </div>
+                            </div>
+                            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        Discount Type
+                                    </label>
+                                    <select
+                                        value={discountType}
+                                        onChange={(e) => setDiscountType(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent"
+                                    >
+                                        <option value="flat">Flat Amount (₹)</option>
+                                        <option value="percentage">Percentage (%)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        Discount {discountType === 'percentage' ? '(%)' : '(₹)'}
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={discount}
+                                        onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+                                        min="0"
+                                        step={discountType === 'percentage' ? '1' : '0.01'}
+                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent"
+                                        placeholder={discountType === 'percentage' ? '0' : '0.00'}
                                     />
                                 </div>
                             </div>
@@ -809,6 +878,12 @@ export default function CreateEditInvoice() {
                                         <span className="text-gray-600 dark:text-gray-400">Subtotal:</span>
                                         <span className="text-gray-800 dark:text-white">₹{subtotal.toFixed(2)}</span>
                                     </div>
+                                    {discountAmount > 0 && (
+                                        <div className="flex justify-between text-sm text-red-600">
+                                            <span>Discount:</span>
+                                            <span>-₹{discountAmount.toFixed(2)}</span>
+                                        </div>
+                                    )}
                                     <div className="flex justify-between text-lg font-bold border-t border-gray-300 dark:border-gray-600 pt-2">
                                         <span className="text-gray-800 dark:text-white">Total:</span>
                                         <span className="text-primary">₹{total.toFixed(2)}</span>

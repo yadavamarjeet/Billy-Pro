@@ -16,12 +16,14 @@ export default function InvoiceDetail() {
     const [data, setData] = useState(null);
 
     useEffect(() => {
-        const savedData = Storage.getData();
-        if (savedData) {
-            setData(savedData);
-            const foundInvoice = savedData.invoices.find(inv => inv.id === params.id);
-            setInvoice(foundInvoice);
-        }
+        (async () => {
+            const savedData = await Storage.getData();
+            if (savedData) {
+                setData(savedData);
+                const foundInvoice = savedData.invoices.find(inv => inv.id === params.id);
+                setInvoice(foundInvoice);
+            }
+        })();
     }, [params.id]);
 
     if (!invoice) {
@@ -112,6 +114,7 @@ export default function InvoiceDetail() {
                     <table className="w-full mb-8">
                         <thead>
                             <tr className="border-b-2 border-gray-300 dark:border-gray-600">
+                                <th className="text-left py-3 text-gray-800 dark:text-white">#</th>
                                 <th className="text-left py-3 text-gray-800 dark:text-white">Item</th>
                                 <th className="text-right py-3 text-gray-800 dark:text-white">Price</th>
                                 <th className="text-right py-3 text-gray-800 dark:text-white">Qty</th>
@@ -121,6 +124,7 @@ export default function InvoiceDetail() {
                         <tbody>
                             {invoice.items.map((item, index) => (
                                 <tr key={index} className="border-b border-gray-200 dark:border-gray-600">
+                                    <td className="py-3 text-gray-800 dark:text-white">{index + 1}</td>
                                     <td className="py-3 text-gray-800 dark:text-white">{item.name}</td>
                                     <td className="py-3 text-right text-gray-800 dark:text-white">
                                         {formatCurrency(item.price)}

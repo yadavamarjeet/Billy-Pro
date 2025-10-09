@@ -19,7 +19,7 @@ import { Storage } from '@/lib/storage';
 import clsx from 'clsx';
 
 export default function Layout({ children }) {
-    const [darkMode, setDarkMode] = useState(false);
+    const [darkMode, setDarkMode] = useState(true);
     const [sidebarOpen, setSidebarOpen] = useState(async () => {
         const savedSidebarState = await Storage.getItem('sidebarOpen');
         return savedSidebarState !== null ? savedSidebarState : true;

@@ -18,6 +18,7 @@ import Toast from '@/components/UI/Toast';
 import Layout from '@/components/Layout/Layout';
 import ShareButton from '@/components/Buttons/ShareButton';
 import { downloadInvoicePDF } from '@/lib/pdf';
+import clsx from 'clsx';
 
 
 export default function Invoices() {
@@ -26,35 +27,49 @@ export default function Invoices() {
     const [searchTerm, setSearchTerm] = useState('');
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [invoiceToDelete, setInvoiceToDelete] = useState(null);
+    const [invoiceName, setInvoiceName] = useState('');
     const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+    const [filteredInvoices, setFilteredInvoices] = useState([]);
 
     useEffect(() => {
-        const savedData = Storage.getData();
-        if (savedData) setData(savedData);
-    }, []);
+        (async () => {
+            const savedData = await Storage.getData();
+            if (savedData) {
+                setData(savedData);
+            }
+        })();
+    }, [filter]); // Add filter as dependency
+
+    // Separate useEffect for search to avoid race conditions
+    useEffect(() => {
+        if (data.invoices.length > 0) {
+            let filtered = filterInvoicesByDate(data.invoices, filter);
+
+            if (searchTerm) {
+                filtered = filtered.filter(invoice =>
+                    invoice.number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    invoice.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    invoice.customerPhone?.includes(searchTerm)
+                );
+            }
+
+            // Sort by date (newest first)
+            filtered.sort((a, b) => {
+                const dateA = parseCreatedAt(a.createdAt);
+                const dateB = parseCreatedAt(b.createdAt);
+                return dateB - dateA; // Newest first
+            });
+
+            setFilteredInvoices(filtered);
+        }
+    }, [data, filter, searchTerm]); // Add all dependencies
+
 
     const showToast = (message, type = 'success') => {
         setToast({ show: true, message, type });
         setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
     };
 
-    let filteredInvoices = filterInvoicesByDate(data.invoices, filter);
-
-    // Apply search
-    if (searchTerm) {
-        filteredInvoices = filteredInvoices.filter(invoice =>
-            invoice.number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            invoice.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            invoice.customerPhone?.includes(searchTerm)
-        );
-    }
-
-    // Sort by date (newest first)
-    filteredInvoices.sort((a, b) => {
-        const dateA = parseCreatedAt(a.createdAt);
-        const dateB = parseCreatedAt(b.createdAt);
-        return dateB - dateA; // Newest first
-    });
 
     const exportCSV = () => {
         const headers = ['Invoice Number', 'Date', 'Customer Name', 'Customer Phone', 'Items', 'Subtotal', 'Total'];
@@ -86,12 +101,27 @@ export default function Invoices() {
     };
 
     const confirmDelete = (invoice) => {
+        if (data.settings.canDeleteInvoices === false) {
+            showToast('Deleting invoices is disabled by admin', 'error');
+            return;
+        }
+
         setInvoiceToDelete(invoice);
         setShowDeleteModal(true);
     };
 
     const deleteInvoice = () => {
         if (invoiceToDelete) {
+            if (invoiceToDelete.number !== invoiceName) {
+                showToast('Invalid value', 'error');
+                return
+            }
+
+            if (data.settings.canDeleteInvoices === false) {
+                showToast('Deleting invoices is disabled by admin', 'error');
+                return;
+            }
+
             const updatedInvoices = data.invoices.filter(inv => inv.id !== invoiceToDelete.id);
             const updatedData = { ...data, invoices: updatedInvoices };
             setData(updatedData);
@@ -99,6 +129,7 @@ export default function Invoices() {
             showToast('Invoice deleted successfully');
             setShowDeleteModal(false);
             setInvoiceToDelete(null);
+            setInvoiceName('');
         }
     };
 
@@ -249,7 +280,7 @@ export default function Invoices() {
                                             </button>
                                             <button
                                                 onClick={() => confirmDelete(invoice)}
-                                                className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-100 dark:hover:bg-red-900"
+                                                className={clsx(data.settings.canDeleteInvoices ? 'opacity-100 cursor-allowed' : 'opacity-40 cursor-not-allowed', "text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-100 dark:hover:bg-red-900")}
                                                 title="Delete Invoice"
                                             >
                                                 <Trash2 className="w-4 h-4" />
@@ -302,16 +333,23 @@ export default function Invoices() {
                             Are you sure you want to delete invoice <strong>{invoiceToDelete?.number}</strong>?
                             This action cannot be undone.
                         </p>
-                        <div className="flex justify-end space-x-3">
+                        <div className="flex justify-between space-x-3">
                             <button
                                 onClick={() => setShowDeleteModal(false)}
                                 className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white border border-gray-300 dark:border-gray-600 rounded-lg"
                             >
                                 Cancel
                             </button>
+                            <input
+                                type="text"
+                                placeholder=""
+                                value={invoiceName}
+                                onChange={(e) => setInvoiceName(e.target.value)}
+                                className="bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg pl-2 pr-3 py-1 text-sm w-32"
+                            />
                             <button
                                 onClick={deleteInvoice}
-                                className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600"
+                                className={clsx(data.settings.canDeleteInvoices ? 'opacity-100 cursor-allowed' : 'opacity-40 cursor-not-allowed', "bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600")}
                             >
                                 Delete Invoice
                             </button>
