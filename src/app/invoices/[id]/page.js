@@ -586,7 +586,7 @@ export default function CreateEditInvoice() {
 
                                         {/* Enhanced Custom Dropdown */}
                                         {selectedProduct && (
-                                            <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl max-h-80 overflow-y-auto">
+                                            <div className="absolute z-50 fit-content mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl max-h-80 overflow-y-auto">
                                                 {data.products
                                                     .filter(product =>
                                                         product.name.toLowerCase().includes(selectedProduct.toLowerCase()) ||
